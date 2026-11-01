@@ -836,6 +836,22 @@ function renderTodayStats(){
 function renderRecent(){
   const list = orders.filter(o => o.status !== 'noshow').slice(-5).reverse();
   if (!list.length){
+    if (!students.length){
+      const R0 = currentRoster();
+      $('#recentList').innerHTML = R0
+        ? `<div class="card" style="text-align:center">
+            <div style="font-size:15px;margin-bottom:6px">本地还没有档案</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:14px">历史数据还没载入，载入后就能按姓名/学校/班级搜</div>
+            <button class="btn primary block" onclick="importRoster()">载入 ${R0.rows.length} 份历史档案</button>
+          </div>`
+        : `<div class="card" style="text-align:center">
+            <div style="font-size:15px;margin-bottom:6px">第一次用，先导入档案库</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:14px">选一次历史档案文件，之后按姓名 / 学校 / 班级都能搜</div>
+            <button class="btn primary block" onclick="openRosterFile()">导入档案库文件</button>
+            <button class="btn ghost block" style="margin-top:8px" onclick="openStudent(null)">手动建档</button>
+          </div>`;
+      return;
+    }
     $('#recentList').innerHTML = `<div class="empty">还没有记录<br>上面搜学生姓名，第一次用先建档</div>`;
     return;
   }

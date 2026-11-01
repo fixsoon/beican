@@ -249,13 +249,14 @@ nav svg{stroke:var(--muted);fill:none;stroke-width:1.7;stroke-linecap:round;stro
 </style>
 </head>
 <body>
+<script>window.__WM="BC-D54E";</script>
 
 <header>
   <div class="brand">
     <h1>备餐台账</h1>
     <span id="shopTag" class="shop" style="display:none"></span>
     <span class="date" id="todayLabel"></span>
-    <span class="date" id="verTag" style="opacity:.55">v7</span>
+    <span class="date" id="verTag" style="opacity:.55">v8</span>
   </div>
 </header>
 
@@ -325,7 +326,10 @@ nav svg{stroke:var(--muted);fill:none;stroke-width:1.7;stroke-linecap:round;stro
     <button class="btn ghost block" style="margin-top:10px" onclick="copyBill()">复制整段</button>
   </details>
   <div class="row" style="gap:8px;margin-top:12px">
-    <button class="btn ghost block" onclick="exportCSV()">导出表格</button>
+    <button class="btn ghost block" onclick="exportCSV(false)">导出表格（电话打码）</button>
+  </div>
+  <div class="row" style="gap:8px;margin-top:8px">
+    <button class="btn ghost block" style="opacity:.85" onclick="exportCSV(true)">导出完整电话</button>
   </div>
 </section>
 
@@ -398,6 +402,11 @@ nav svg{stroke:var(--muted);fill:none;stroke-width:1.7;stroke-linecap:round;stro
       以上规则在录入时即时运行，不需要人工判断。
     </div>
   </div>
+
+  <div class="card">
+    <div class="sec-title" style="margin-top:0">程序信息</div>
+    <div class="tip" id="aboutInfo"></div>
+  </div>
 </section>
 
 </main>
@@ -440,6 +449,11 @@ const KEY_STU = 'bp_students_v1', KEY_ORD = 'bp_orders_v1',
 
 let students = [], orders = [], settings = {}, items = [];
 let phoneIndex = {}, studentById = {};
+
+/* 程序实例水印：构建时由 build.py 注入真实值（window.__WM），
+   源码直开时是 DEV。导出文件和界面都带这个码，外传可溯源。 */
+const WM = (typeof window.__WM === 'string' && window.__WM) ? window.__WM : 'DEV';
+const WM_OWNER = '内部工具 · 未授权不得转发或商用于其他摊点';
 
 const DEFAULT_ITEMS = ['酸菜牛肉','田舍备餐','照烧鸡肉','松板肉炒饭','芝士牛排意面','元气双拼'];
 const DEFAULT_SET = { shop:'', payNote:'', warnDays:7, blockDays:14, prices:{}, drinkPrice:0, clsDecode:true,
@@ -610,6 +624,12 @@ function normPhone(raw){
   if (d.length === 13 && d.startsWith('86')) d = d.slice(2);
   if (d.length === 14 && d.startsWith('086')) d = d.slice(3);
   return d;
+}
+
+/* 号码脱敏：138****0000。导出给外人看的表格走这个 */
+function maskPhone(raw){
+  const d = normPhone(raw);
+  return d.length === 11 ? d.slice(0,3) + '****' + d.slice(7) : d;
 }
 
 /* 号码风险检测：返回 {level, msg, owners} */
@@ -1877,18 +1897,27 @@ function copyOweList(){
   copyText(t, '未付名单已复制');
 }
 
-function exportCSV(){
+/* 导出表格
+   full=false（默认）：家长电话中间四位打码，可以放心转给兼职或家长看
+   full=true：完整号码，导出前二次确认 */
+function exportCSV(full){
+  const showFull = full === true;
+  if (showFull && !confirm('这份表格带完整家长手机号，一旦转发整份名单就出去了。\n\n确定导出？')) return;
+  const mask = !showFull;
   const rows = [['日期','餐别','学校','年级','班级','姓名','微信名','家长电话','餐品','份数','单价','金额','状态']];
   const st = { paid:'已收', unpaid:'待收', noshow:'未取' };
   orders.slice().sort((a,b)=> a.date.localeCompare(b.date)).forEach(o => {
     const s = students.find(x => x.id === o.studentId);
     rows.push([o.date, o.meal || '', s?s.school:'', s&&s.gradeNo?(GRADE_LABEL[s.gradeNo]||s.gradeNo):'',
-      s&&s.clsNo?s.clsNo:'', s?s.name:'', s?s.wx:'', s?normPhone(s.phone):'',
+      s&&s.clsNo?s.clsNo:'', s?s.name:'', s?s.wx:'',
+      s ? (mask ? maskPhone(s.phone) : normPhone(s.phone)) : '',
       o.item, o.qty, o.amount, o.amount*o.qty, st[o.status]||o.status]);
   });
+  /* 末行落水印：文件传出去也能认出是哪套程序、什么时候导的 */
+  rows.push([`# 备餐台账 ${WM} · ${new Date().toLocaleString('zh-CN')} · 电话${mask?'已脱敏':'完整'} · ${WM_OWNER}`]);
   const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-  download(`备餐明细_${today()}.csv`, csv, 'text/csv');
-  toast('已导出表格');
+  download(`备餐明细_${today()}_${mask?'脱敏':'完整'}_${WM}.csv`, csv, 'text/csv');
+  toast(mask ? '已导出（电话已打码）' : '已导出（含完整电话）');
 }
 
 function download(name, content, type){
@@ -1921,6 +1950,9 @@ function renderSettings(){
     </div>`;
   }).join('');
   $('#drinkPrice').value = settings.drinkPrice || '';
+  $('#aboutInfo').innerHTML = `版本 <b>v8</b> · 程序标识 <b>${esc(WM)}</b><br>
+    <span style="color:var(--muted)">${WM_OWNER}。<br>
+    导出的表格、备份文件名里都带这个标识，流出去能认出来源。</span>`;
   const last = lsGet(KEY_BAK);
   const unpaidCount = orders.filter(o=>o.status==='unpaid').length;
   $('#backupInfo').innerHTML = `档案 <b>${students.length}</b> 人 · 订单 <b>${orders.length}</b> 笔 · 其中待收 <b>${unpaidCount}</b> 笔<br>
@@ -2083,10 +2115,12 @@ function importRoster(silent){
 }
 
 function exportJSON(){
-  const data = { v:1, exportedAt: new Date().toISOString(), students, orders, settings, items };
-  download(`备餐备份_${today()}.json`, JSON.stringify(data, null, 2), 'application/json');
+  /* 备份要能完整还原，所以电话不打码；靠文件名和内部 watermark 字段溯源，
+     导出后自己收好，别往群里发。 */
+  const data = { v:1, watermark: WM, exportedAt: new Date().toISOString(), students, orders, settings, items };
+  download(`备餐备份_${today()}_${WM}.json`, JSON.stringify(data, null, 2), 'application/json');
   lsSet(KEY_BAK, Date.now());
-  renderSettings(); toast('备份已导出');
+  renderSettings(); toast('备份已导出（含完整档案，勿外传）');
 }
 
 $('#importFile').addEventListener('change', e => {
@@ -2705,8 +2739,15 @@ function confirmXlsxImport(){
   go('pick');
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:'){
-    navigator.serviceWorker.register('sw.js?v=7').then(r => r.update()).catch(()=>{});
+    navigator.serviceWorker.register('sw.js?v=8').then(r => r.update()).catch(()=>{});
   }
+
+  /* 控制台留痕：谁打开开发者工具都能看到程序标识，杜绝"随手抄一份" */
+  try {
+    console.log('%c备餐台账 v8', 'font-weight:700;color:#B4541F');
+    console.log('程序标识 ' + WM + ' · ' + WM_OWNER);
+    console.log('本程序档案数据只存在本机浏览器，未随程序分发。');
+  } catch(e){}
 })();
 </script>
 <script>/* SheetJS 0.18.5 · 本地内置，离线可用 */
